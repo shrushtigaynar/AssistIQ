@@ -1,0 +1,33 @@
+services:
+  - type: web
+    name: assistiq-api
+    runtime: node
+    rootDir: server
+    buildCommand: npm ci
+    startCommand: npm start
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: MONGODB_REQUIRED
+        value: "true"
+      - key: MONGODB_URI
+        sync: false
+      - key: CLIENT_URL
+        sync: false
+      - key: ASSISTANT_PORTAL_TOKEN
+        sync: false
+      - key: CLIENT_PORTAL_TOKEN
+        sync: false
+      - key: ASSISTANT_EMAIL
+        sync: false
+      - key: ASSISTANT_NAME
+        sync: false
+      - key: CLIENT_EMAIL
+        sync: false
+      - key: CLIENT_NAME
+        sync: false
+      - key: ENABLE_DEMO_RESET
+        value: "false"
+      - key: AI_CONFIDENCE_THRESHOLD
+        value: "0.75"
