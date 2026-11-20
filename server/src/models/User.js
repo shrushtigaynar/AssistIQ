@@ -14,10 +14,14 @@ const userSchema = new mongoose.Schema(
       lowercase: true,
       trim: true,
     },
+    passwordHash: {
+      type: String,
+      default: '',
+    },
     role: {
       type: String,
       enum: ['ASSISTANT', 'CLIENT', 'ADMIN'],
-      default: 'ASSISTANT',
+      default: 'CLIENT',
     },
     avatar: {
       type: String,
@@ -25,23 +29,14 @@ const userSchema = new mongoose.Schema(
     },
     organization: {
       type: String,
-      default: 'Vance Capital',
-    },
-    assistantId: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: 'User',
-      default: null,
+      default: '',
+      trim: true,
     },
     preferences: {
       conciseSummaries: { type: Boolean, default: true },
       deadlineReminders: { type: Boolean, default: true },
       notificationsEnabled: { type: Boolean, default: true },
       defaultReplyTone: { type: String, enum: ['professional', 'friendly', 'concise'], default: 'professional' },
-      defaultInboxSegment: {
-        type: String,
-        enum: ['PRIMARY_INBOX', 'ASSISTANT_REPLY', 'CLIENT_REPLY', 'NEEDS_REVIEW', 'WAITING_FOR', 'NO_REPLY_NEEDED'],
-        default: 'PRIMARY_INBOX',
-      },
       compactDisplay: { type: Boolean, default: false },
     },
   },

@@ -1,17 +1,26 @@
 const configuredApiBase = (import.meta.env.VITE_API_URL || '').trim()
 const API_BASE = (configuredApiBase || (import.meta.env.DEV ? 'http://localhost:5000' : '')).replace(/\/$/, '')
 
+const TOKEN_KEY = 'assistiq.token'
+
+export const getStoredToken = () =>
+  (typeof window !== 'undefined' && window.localStorage.getItem(TOKEN_KEY)) || ''
+
+export const storeToken = (token) => {
+  window.localStorage.setItem(TOKEN_KEY, token)
+}
+
+export const clearToken = () => {
+  window.localStorage.removeItem(TOKEN_KEY)
+}
+
 async function apiRequest(path, options = {}) {
   if (!API_BASE) {
     throw new Error('VITE_API_URL must be configured for production.')
   }
 
   const { method = 'GET', body, headers = {} } = options
-  const isPublicSession = path === '/api/auth/session'
-  const portal = path.startsWith('/api/client') ? 'client' : 'assistant'
-  const token = !isPublicSession && typeof window !== 'undefined'
-    ? window.localStorage.getItem(`assistiq.${portal}.token`)
-    : ''
+  const token = getStoredToken()
 
   const response = await fetch(`${API_BASE}${path}`, {
     method,
@@ -24,310 +33,123 @@ async function apiRequest(path, options = {}) {
   })
 
   const payload = await response.json().catch(() => ({}))
-
   if (!response.ok || payload.success === false) {
     throw new Error(payload.message || `Request failed (${response.status})`)
   }
-
   return payload
 }
 
-export const createPortalSession = async (token) => {
-  const response = await apiRequest('/api/auth/session', {
-    method: 'POST',
-    body: { token },
-  })
+// ---------- Auth ----------
+
+export const register = async ({ name, email, password }) => {
+  const response = await apiRequest('/api/auth/register', { method: 'POST', body: { name, email, password } })
   return response.data || null
 }
 
-export const getStoredPortalToken = (portal) =>
-  typeof window === 'undefined' ? '' : window.localStorage.getItem(`assistiq.${portal}.token`) || ''
-
-export const storePortalToken = (portal, token) => {
-  window.localStorage.setItem(`assistiq.${portal}.token`, token)
+export const login = async ({ email, password }) => {
+  const response = await apiRequest('/api/auth/login', { method: 'POST', body: { email, password } })
+  return response.data || null
 }
 
-export const clearPortalToken = (portal) => {
-  window.localStorage.removeItem(`assistiq.${portal}.token`)
+export const logout = async () => {
+  try {
+    await apiRequest('/api/auth/logout', { method: 'POST' })
+  } catch {
+    // Session cleanup is best-effort; the local token is cleared regardless.
+  }
+  clearToken()
 }
+
+export const fetchCurrentUser = async () => {
+  const response = await apiRequest('/api/auth/me')
+  return response.data?.user || null
+}
+
+// ---------- Threads ----------
 
 export const fetchThreads = async (query = {}) => {
   const params = new URLSearchParams()
   Object.entries(query).forEach(([key, value]) => {
-    if (value !== undefined && value !== null && value !== '') {
+    if (value !== undefined && value !== null && value !== '' && value !== 'ALL') {
       params.set(key, String(value))
     }
   })
-
-  const path = params.toString() ? `/api/threads?${params.toString()}` : '/api/threads'
-  const response = await apiRequest(path)
-  return response.data || []
+  const suffix = params.toString() ? `?${params.toString()}` : ''
+  const response = await apiRequest(`/api/threads${suffix}`)
+  return { threads: response.data || [], counts: response.counts || {} }
 }
 
-export const fetchCounts = async () => {
-  const response = await apiRequest('/api/threads/counts')
-  return response.counts || {}
+export const getThread = async (threadId) => {
+  const response = await apiRequest(`/api/threads/${encodeURIComponent(threadId)}`)
+  return response.data || null
 }
 
-export const getThreadById = async (threadId) => {
-  const response = await apiRequest(`/api/threads/${threadId}`)
+export const updateThreadClassification = async (threadId, classification, reason = '') => {
+  const response = await apiRequest(`/api/threads/${encodeURIComponent(threadId)}/classification`, {
+    method: 'PATCH',
+    body: { classification, reason },
+  })
   return response.data || null
 }
 
 export const updateThreadStatus = async (threadId, updates = {}) => {
-  const response = await apiRequest(`/api/threads/${threadId}/status`, {
+  const response = await apiRequest(`/api/threads/${encodeURIComponent(threadId)}/status`, {
     method: 'PATCH',
     body: updates,
   })
   return response.data || null
 }
 
-export const updateThreadClassification = async (threadId, classification, reason = '', user = 'Elena Rostova (PA)') => {
-  const response = await apiRequest(`/api/threads/${threadId}/classification`, {
-    method: 'PATCH',
-    body: { classification, reason, user },
-  })
+export const analyzeThread = async (threadId) => {
+  const response = await apiRequest(`/api/threads/${encodeURIComponent(threadId)}/analyze`, { method: 'POST' })
   return response.data || null
 }
 
-export const addThreadNote = async (threadId, noteData = {}) => {
-  const response = await apiRequest(`/api/threads/${threadId}/notes`, {
-    method: 'POST',
-    body: noteData,
-  })
-  return response.data || null
-}
-
-export const saveThreadDraft = async (threadId, draftData = {}) => {
-  const response = await apiRequest(`/api/threads/${threadId}/draft`, {
-    method: 'PUT',
-    body: draftData,
-  })
-  return response.data || null
-}
-
-export const sendThreadReply = async (threadId, replyData = {}) => {
-  const response = await apiRequest(`/api/threads/${threadId}/reply`, {
-    method: 'POST',
-    body: replyData,
-  })
-  return response.data || null
-}
-
-export const toggleThreadAction = async (threadId, actionId) => {
-  const response = await apiRequest(`/api/threads/${threadId}/actions/${actionId}`, {
-    method: 'PATCH',
-  })
-  return response.data || null
-}
-
-export const createConversationActionItem = async (threadId, itemData = {}) => {
-  const response = await apiRequest(`/api/conversations/${encodeURIComponent(threadId)}/action-items`, {
-    method: 'POST',
-    body: itemData,
-  })
-  return response.data || null
-}
-
-export const fetchWorkspaceOverview = async () => {
-  const response = await apiRequest('/api/workspace/overview')
-  return response.data || null
-}
-
-export const fetchWorkspaceActionItems = async (query = {}) => {
-  const params = new URLSearchParams()
-  Object.entries(query).forEach(([key, value]) => {
-    if (value !== undefined && value !== null && value !== '') params.set(key, String(value))
-  })
-  const suffix = params.toString() ? `?${params}` : ''
-  const response = await apiRequest(`/api/workspace/action-items${suffix}`)
-  return response.data || []
-}
-
-export const updateWorkspaceActionItem = async (threadId, actionId, updates = {}) => {
-  const response = await apiRequest(`/api/workspace/action-items/${encodeURIComponent(threadId)}/${encodeURIComponent(actionId)}`, {
-    method: 'PATCH',
-    body: updates,
-  })
-  return response.data || null
-}
-
-export const fetchWorkspaceFollowUps = async (status = 'ALL') => {
-  const response = await apiRequest(`/api/workspace/follow-ups?status=${encodeURIComponent(status)}`)
-  return response.data || []
-}
-
-export const updateWorkspaceFollowUp = async (threadId, updates = {}) => {
-  const response = await apiRequest(`/api/workspace/follow-ups/${encodeURIComponent(threadId)}`, {
-    method: 'PATCH',
-    body: updates,
-  })
-  return response.data || null
-}
-
-export const fetchWorkspaceMeetings = async (status = 'ALL') => {
-  const response = await apiRequest(`/api/workspace/meetings?status=${encodeURIComponent(status)}`)
-  return response.data || []
-}
-
-export const updateWorkspaceMeeting = async (threadId, updates = {}) => {
-  const response = await apiRequest(`/api/workspace/meetings/${encodeURIComponent(threadId)}`, {
-    method: 'PATCH',
-    body: updates,
-  })
-  return response.data || null
-}
-
-export const fetchAssistantSettings = async () => {
-  const response = await apiRequest('/api/workspace/settings')
-  return response.data || null
-}
-
-export const updateAssistantProfile = async (updates = {}) => {
-  const response = await apiRequest('/api/workspace/settings/profile', {
-    method: 'PATCH',
-    body: updates,
-  })
-  return response.data || null
-}
-
-export const bulkThreadUpdate = async (threadIds, action, value = null, user = 'Elena Rostova (PA)') => {
-  const response = await apiRequest('/api/threads/bulk', {
-    method: 'POST',
-    body: { threadIds, action, value, user },
-  })
-  return response.data || []
-}
-
-export const injectThread = async (threadData = {}) => {
-  const response = await apiRequest('/api/threads/inject', {
-    method: 'POST',
-    body: threadData,
-  })
-  return response.data || null
-}
-
-export const resetThreadData = async () => {
-  const response = await apiRequest('/api/seed/reset', {
-    method: 'POST',
-  })
-  return response.data || []
-}
-
-export const analyzeThreadData = async (threadData = {}) => {
-  const response = await apiRequest('/api/ai/analyze', {
-    method: 'POST',
-    body: threadData,
-  })
-  return response.data || null
-}
-
-export const classifyThreadData = async (threadData = {}) => {
-  const response = await apiRequest('/api/ai/classify', {
-    method: 'POST',
-    body: threadData,
-  })
-  return response.data || null
-}
-
-export const getConversationAnalysis = async (threadId) => {
-  const response = await apiRequest(`/api/ai/conversations/${encodeURIComponent(threadId)}/analysis`)
-  return response.data || null
-}
-
-export const analyzeConversationById = async (threadId) => {
-  const response = await apiRequest(`/api/ai/conversations/${encodeURIComponent(threadId)}/reanalyze`, {
-    method: 'POST',
-  })
-  return response.data || null
-}
-
-export const generateConversationReplyDraft = async (threadId, tone) => {
-  const response = await apiRequest(`/api/ai/conversations/${encodeURIComponent(threadId)}/draft`, {
+export const generateThreadDraft = async (threadId, tone = 'professional') => {
+  const response = await apiRequest(`/api/threads/${encodeURIComponent(threadId)}/draft/generate`, {
     method: 'POST',
     body: { tone },
   })
   return response.data || null
 }
 
-export const askConversationQuestion = async (threadId, question) => {
-  const response = await apiRequest(`/api/ai/conversations/${encodeURIComponent(threadId)}/questions`, {
-    method: 'POST',
-    body: { question },
-  })
-  return response.data || null
-}
-
-export const requestClientDraftApproval = async (threadId, draft) => {
-  const response = await apiRequest(`/api/threads/${encodeURIComponent(threadId)}/draft/request-approval`, {
-    method: 'POST',
+export const saveThreadDraft = async (threadId, draft) => {
+  const response = await apiRequest(`/api/threads/${encodeURIComponent(threadId)}/draft`, {
+    method: 'PUT',
     body: draft,
   })
   return response.data || null
 }
 
-export const fetchClientProfile = async () => {
-  const response = await apiRequest('/api/client/profile')
-  return response.data || null
-}
-
-export const updateClientPreferences = async (preferences) => {
-  const response = await apiRequest('/api/client/profile/preferences', {
-    method: 'PATCH',
-    body: { preferences },
-  })
-  return response.data || null
-}
-
-export const fetchClientInbox = async (handled = false) => {
-  const params = handled ? '?handled=true' : ''
-  const response = await apiRequest(`/api/client/inbox${params}`)
-  return response.data || []
-}
-
-export const fetchClientDrafts = async () => {
-  const response = await apiRequest('/api/client/drafts')
-  return response.data || []
-}
-
-export const fetchClientConversation = async (threadId) => {
-  const response = await apiRequest(`/api/client/conversations/${encodeURIComponent(threadId)}`)
-  return response.data || null
-}
-
-export const markClientConversationHandled = async (threadId, handled = true) => {
-  const response = await apiRequest(`/api/client/conversations/${encodeURIComponent(threadId)}/handled`, {
-    method: 'PATCH',
-    body: { handled },
-  })
-  return response.data || null
-}
-
-export const delegateClientConversation = async (threadId, instruction = '') => {
-  const response = await apiRequest(`/api/client/conversations/${encodeURIComponent(threadId)}/delegate`, {
+export const sendThreadReply = async (threadId, reply) => {
+  const response = await apiRequest(`/api/threads/${encodeURIComponent(threadId)}/send`, {
     method: 'POST',
-    body: { instruction },
+    body: { ...reply, explicitApproval: true },
   })
   return response.data || null
 }
 
-export const submitClientResponse = async (threadId, body) => {
-  const response = await apiRequest(`/api/client/conversations/${encodeURIComponent(threadId)}/response`, {
-    method: 'POST',
-    body: { body, explicitApproval: true },
-  })
-  return response.data || null
-}
+// ---------- Email accounts ----------
 
-export const decideClientDraft = async (threadId, decision, reason = '') => {
-  const response = await apiRequest(`/api/client/conversations/${encodeURIComponent(threadId)}/draft`, {
-    method: 'PATCH',
-    body: { decision, reason },
-  })
-  return response.data || null
-}
-
-export const getEmailAccounts = async () => {
+export const fetchEmailAccounts = async () => {
   const response = await apiRequest('/api/email-accounts')
   return response.data || []
+}
+
+export const getGmailConnectUrl = async () => {
+  const response = await apiRequest('/api/email-accounts/google/connect-url')
+  return response.data?.url || ''
+}
+
+export const syncEmailAccount = async (maxMessages = 60) => {
+  const response = await apiRequest('/api/email-accounts/google/sync', {
+    method: 'POST',
+    body: { maxMessages },
+  })
+  return response.data || null
+}
+
+export const disconnectEmailAccount = async (accountId) => {
+  const response = await apiRequest(`/api/email-accounts/${encodeURIComponent(accountId)}`, { method: 'DELETE' })
+  return response.data || null
 }

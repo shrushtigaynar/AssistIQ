@@ -77,6 +77,11 @@ const threadSchema = new mongoose.Schema(
       unique: true,
       index: true,
     },
+    gmailThreadId: { type: String, default: '', index: true },
+    gmailMessageIds: [{ type: String }],
+    externalSource: { type: String, enum: ['GMAIL', 'MANUAL'], default: 'MANUAL' },
+    lastExternalSyncAt: { type: Date, default: null },
+
     clientId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'User',
@@ -99,11 +104,13 @@ const threadSchema = new mongoose.Schema(
     timestamp: { type: Date, default: Date.now, index: true },
     dateStr: { type: String, default: '' },
 
-    // Primary Mutually Exclusive Responsibility Taxonomy
+    // Primary Mutually Exclusive Responsibility Taxonomy.
+    // UNCLASSIFIED = not yet analyzed by Gemini (provider failure or pending);
+    // it is never a substitute classification.
     classification: {
       type: String,
-      enum: ['ASSISTANT_REPLY', 'CLIENT_REPLY', 'NO_REPLY_NEEDED', 'NEEDS_REVIEW'],
-      default: 'NEEDS_REVIEW',
+      enum: ['UNCLASSIFIED', 'ASSISTANT_REPLY', 'CLIENT_REPLY', 'NO_REPLY_NEEDED', 'NEEDS_REVIEW'],
+      default: 'UNCLASSIFIED',
       index: true,
     },
 
@@ -126,7 +133,7 @@ const threadSchema = new mongoose.Schema(
     handledBy: { type: String, default: '' },
     draftApprovalStatus: {
       type: String,
-      enum: ['NOT_REQUIRED', 'PENDING', 'APPROVED', 'REJECTED', 'SENT_SIMULATED'],
+      enum: ['NOT_REQUIRED', 'PENDING', 'APPROVED', 'REJECTED', 'SENT'],
       default: 'NOT_REQUIRED',
     },
     draftApprovedAt: { type: Date, default: null },
@@ -145,8 +152,16 @@ const threadSchema = new mongoose.Schema(
     aiConfidence: { type: Number, min: 0, max: 1, default: 0.8 },
     aiReasoning: { type: String, default: '' },
     classificationReason: { type: String, default: '' },
-    aiSuggestedClassification: { type: String, enum: ['ASSISTANT_REPLY', 'CLIENT_REPLY', 'NO_REPLY_NEEDED', 'NEEDS_REVIEW'], default: 'NEEDS_REVIEW' },
-    aiSource: { type: String, default: 'Rule-Based Demo Processing' },
+    aiSuggestedClassification: { type: String, enum: ['ASSISTANT_REPLY', 'CLIENT_REPLY', 'NO_REPLY_NEEDED', 'NEEDS_REVIEW'], default: '' },
+    aiSource: { type: String, default: '' },
+    aiAnalysisStatus: {
+      type: String,
+      enum: ['PENDING', 'ANALYZED', 'FAILED'],
+      default: 'PENDING',
+      index: true,
+    },
+    aiError: { type: String, default: '' },
+    lastAnalysisAt: { type: Date, default: null },
     summary: { type: String, default: '' },
     suggestedAction: { type: String, default: '' },
     classificationManual: { type: Boolean, default: false },

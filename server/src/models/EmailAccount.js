@@ -1,46 +1,47 @@
 import mongoose from 'mongoose'
 
+// A live email provider connection for a user. OAuth tokens are stored
+// encrypted (see services/cryptoService.js) and never exposed to clients.
 const emailAccountSchema = new mongoose.Schema(
   {
     owner: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'User',
-      required: false,
-    },
-    ownerEmail: {
-      type: String,
-      default: 'david.vance@vancecap.com',
-      lowercase: true,
-      trim: true,
+      required: true,
+      index: true,
     },
     provider: {
       type: String,
-      enum: ['GMAIL', 'OUTLOOK'],
+      enum: ['GMAIL'],
       default: 'GMAIL',
+    },
+    providerAccountId: {
+      type: String,
+      default: '',
+      index: true,
+    },
+    providerEmail: {
+      type: String,
+      lowercase: true,
+      trim: true,
+      default: '',
     },
     connectionStatus: {
       type: String,
-      enum: ['CONNECTED', 'DISCONNECTED', 'ERROR', 'SIMULATED'],
-      default: 'SIMULATED',
+      enum: ['CONNECTED', 'DISCONNECTED', 'ERROR'],
+      default: 'CONNECTED',
     },
-    syncStatus: {
-      type: String,
-      enum: ['SYNCED', 'SYNCING', 'ERROR', 'NOT_SYNCED', 'SIMULATED'],
-      default: 'SIMULATED',
-    },
-    lastSynchronizationTime: {
-      type: Date,
-      default: null,
-    },
-    integrationMode: {
-      type: String,
-      enum: ['DEMO', 'LIVE'],
-      default: 'DEMO',
-    },
+    scopes: { type: String, default: '' },
+    accessTokenEnc: { type: String, default: '' },
+    refreshTokenEnc: { type: String, default: '' },
+    tokenExpiry: { type: Date, default: null },
+    lastSynchronizationTime: { type: Date, default: null },
+    lastSyncedMessageId: { type: String, default: '' },
+    lastError: { type: String, default: '' },
   },
   { timestamps: true }
 )
 
-emailAccountSchema.index({ ownerEmail: 1, provider: 1 }, { unique: true })
+emailAccountSchema.index({ owner: 1, provider: 1 }, { unique: true })
 
 export const EmailAccount = mongoose.model('EmailAccount', emailAccountSchema)

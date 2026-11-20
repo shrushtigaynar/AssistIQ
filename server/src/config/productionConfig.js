@@ -1,12 +1,7 @@
 const REQUIRED_PRODUCTION_VARIABLES = [
   'MONGODB_URI',
   'CLIENT_URL',
-  'ASSISTANT_PORTAL_TOKEN',
-  'CLIENT_PORTAL_TOKEN',
-  'ASSISTANT_EMAIL',
-  'ASSISTANT_NAME',
-  'CLIENT_EMAIL',
-  'CLIENT_NAME',
+  'ENCRYPTION_SECRET',
 ]
 
 export const validateProductionConfig = (env = process.env) => {
@@ -21,26 +16,19 @@ export const validateProductionConfig = (env = process.env) => {
     throw new Error('MONGODB_REQUIRED must be true in production.')
   }
 
-  const assistantToken = env.ASSISTANT_PORTAL_TOKEN.trim()
-  const clientToken = env.CLIENT_PORTAL_TOKEN.trim()
-  if (assistantToken === clientToken) {
-    throw new Error('Assistant and client portal tokens must be different.')
-  }
-  if (assistantToken.length < 32 || clientToken.length < 32) {
-    throw new Error('Production portal tokens must each be at least 32 characters long.')
+  if (env.ENCRYPTION_SECRET.trim().length < 32) {
+    throw new Error('ENCRYPTION_SECRET must be at least 32 characters long in production.')
   }
 
   const origins = env.CLIENT_URL.split(',').map((origin) => origin.trim()).filter(Boolean)
   for (const origin of origins) {
-    let parsedOrigin
     try {
-      parsedOrigin = new URL(origin)
+      const parsed = new URL(origin)
+      if (parsed.protocol !== 'https:' || parsed.origin !== origin) {
+        throw new Error('not exact https origin')
+      }
     } catch {
-      throw new Error('CLIENT_URL must contain exact HTTPS origins.')
-    }
-
-    if (parsedOrigin.protocol !== 'https:' || parsedOrigin.origin !== origin) {
-      throw new Error('CLIENT_URL must contain exact HTTPS origins without paths or trailing slashes.')
+      throw new Error('CLIENT_URL must contain exact HTTPS origins in production.')
     }
   }
 }

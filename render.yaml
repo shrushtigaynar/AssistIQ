@@ -15,19 +15,17 @@ services:
         sync: false
       - key: CLIENT_URL
         sync: false
-      - key: ASSISTANT_PORTAL_TOKEN
+      - key: ENCRYPTION_SECRET
         sync: false
-      - key: CLIENT_PORTAL_TOKEN
+      - key: GOOGLE_CLIENT_ID
         sync: false
-      - key: ASSISTANT_EMAIL
+      - key: GOOGLE_CLIENT_SECRET
         sync: false
-      - key: ASSISTANT_NAME
+      - key: GOOGLE_REDIRECT_URI
         sync: false
-      - key: CLIENT_EMAIL
+      - key: GEMINI_API_KEY
         sync: false
-      - key: CLIENT_NAME
-        sync: false
-      - key: ENABLE_DEMO_RESET
-        value: "false"
+      - key: GEMINI_MODEL
+        value: gemini-2.0-flash
       - key: AI_CONFIDENCE_THRESHOLD
         value: "0.75"

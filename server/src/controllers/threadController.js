@@ -1,211 +1,144 @@
 import * as threadService from '../services/threadService.js'
+import { getConnectedAccount, getFreshAccessToken } from '../services/emailAccountService.js'
+import { sendGmailMessage } from '../services/gmailService.js'
 
 export const getThreads = async (req, res, next) => {
   try {
-    const threads = await threadService.getAllThreads(req.query)
-    const counts = await threadService.getCounts()
-    res.json({
-      success: true,
-      data: threads,
-      counts,
-      total: threads.length,
-    })
-  } catch (err) {
-    next(err)
+    const [threads, counts] = await Promise.all([
+      threadService.listThreads(req.user.email, req.query),
+      threadService.getCounts(req.user.email),
+    ])
+    res.json({ success: true, data: threads, counts })
+  } catch (error) {
+    next(error)
   }
 }
 
-export const getCounts = async (req, res, next) => {
+export const getThreadCounts = async (req, res, next) => {
   try {
-    const counts = await threadService.getCounts()
+    const counts = await threadService.getCounts(req.user.email)
     res.json({ success: true, counts })
-  } catch (err) {
-    next(err)
+  } catch (error) {
+    next(error)
   }
 }
 
 export const getThreadById = async (req, res, next) => {
   try {
-    const thread = await threadService.getThreadById(req.params.id)
-    if (!thread) {
-      return res.status(404).json({ success: false, message: 'Thread not found' })
-    }
+    const thread = await threadService.getThreadById(req.user.email, req.params.id)
+    if (!thread) return res.status(404).json({ success: false, message: 'Email not found' })
     res.json({ success: true, data: thread })
-  } catch (err) {
-    next(err)
+  } catch (error) {
+    next(error)
   }
 }
 
 export const overrideClassification = async (req, res, next) => {
   try {
-    const { classification, reason, user } = req.body
-    if (!['ASSISTANT_REPLY', 'CLIENT_REPLY', 'NO_REPLY_NEEDED', 'NEEDS_REVIEW'].includes(classification)) {
+    const { classification, reason } = req.body || {}
+    if (!threadService.VALID_CLASSIFICATIONS.includes(classification)) {
       return res.status(400).json({ success: false, message: 'A valid classification is required' })
     }
     if (reason !== undefined && (typeof reason !== 'string' || reason.length > 500)) {
       return res.status(400).json({ success: false, message: 'reason must be a string of 500 characters or fewer' })
     }
-
-    const updated = await threadService.updateClassification(
-      req.params.id,
-      classification,
-      reason,
-      req.user.name
-    )
-
-    if (!updated) {
-      return res.status(404).json({ success: false, message: 'Thread not found' })
-    }
-
-    const counts = await threadService.getCounts()
-    res.json({ success: true, data: updated, counts })
-  } catch (err) {
-    next(err)
+    const updated = await threadService.updateClassification(req.user.email, req.params.id, classification, reason, req.user.name)
+    if (!updated) return res.status(404).json({ success: false, message: 'Email not found' })
+    res.json({ success: true, data: updated })
+  } catch (error) {
+    next(error)
   }
 }
 
 export const updateStatus = async (req, res, next) => {
   try {
-    const { isHandled, isStarred, isImportant, isRead, isWaiting } = req.body
-    const updates = {}
-    for (const [field, value] of Object.entries({ isHandled, isStarred, isImportant, isRead, isWaiting })) {
-      if (value !== undefined && typeof value !== 'boolean') {
-        return res.status(400).json({ success: false, message: `${field} must be a boolean` })
-      }
-      if (value !== undefined) updates[field] = value
-    }
-
-    if (!Object.keys(updates).length) {
-      return res.status(400).json({ success: false, message: 'At least one valid status field is required' })
-    }
-    const updated = await threadService.updateStatus(req.params.id, updates, req.user.name)
-    if (!updated) {
-      return res.status(404).json({ success: false, message: 'Thread not found' })
-    }
-
-    const counts = await threadService.getCounts()
-    res.json({ success: true, data: updated, counts })
-  } catch (err) {
-    next(err)
+    const updated = await threadService.updateStatus(req.user.email, req.params.id, req.body || {}, req.user.name)
+    if (!updated) return res.status(404).json({ success: false, message: 'Email not found' })
+    res.json({ success: true, data: updated })
+  } catch (error) {
+    if (error.status) return res.status(error.status).json({ success: false, message: error.message })
+    next(error)
   }
 }
 
-export const addNote = async (req, res, next) => {
+export const analyze = async (req, res, next) => {
   try {
-    const { text } = req.body
-    if (typeof text !== 'string' || !text.trim() || text.length > 5000) {
-      return res.status(400).json({ success: false, message: 'Note text must contain 1 to 5000 characters' })
-    }
+    const thread = await threadService.analyzeAndPersistThread(req.user.email, req.params.id)
+    if (!thread) return res.status(404).json({ success: false, message: 'Email not found' })
+    res.json({ success: true, data: thread })
+  } catch (error) {
+    next(error)
+  }
+}
 
-    const updated = await threadService.addInternalNote(req.params.id, text.trim(), req.user.name)
-    if (!updated) {
-      return res.status(404).json({ success: false, message: 'Thread not found' })
+export const generateDraft = async (req, res, next) => {
+  try {
+    const tone = String(req.body?.tone || 'professional').toLowerCase()
+    if (!['professional', 'friendly', 'concise'].includes(tone)) {
+      return res.status(400).json({ success: false, message: 'Tone must be professional, friendly, or concise' })
     }
-
-    res.json({ success: true, data: updated })
-  } catch (err) {
-    next(err)
+    const result = await threadService.generateDraft(req.user.email, req.params.id, tone)
+    if (!result) return res.status(404).json({ success: false, message: 'Email not found' })
+    res.json({ success: true, data: { draft: result.draft, thread: result.thread } })
+  } catch (error) {
+    next(error)
   }
 }
 
 export const saveDraft = async (req, res, next) => {
   try {
-    const { to, cc, subject, body, tone, aiSource, fallbackReason } = req.body
-    const updated = await threadService.saveDraft(req.params.id, { to, cc, subject, body, tone, aiSource, fallbackReason })
-    if (!updated) {
-      return res.status(404).json({ success: false, message: 'Thread not found' })
-    }
-    res.json({ success: true, data: updated })
-  } catch (err) {
-    next(err)
-  }
-}
-
-export const requestDraftApproval = async (req, res, next) => {
-  try {
-    const updated = await threadService.requestClientDraftApproval(req.params.id, req.body, req.user.email)
-    if (!updated) return res.status(404).json({ success: false, message: 'Thread not found' })
+    const { to, cc, subject, body, tone, aiSource, fallbackReason } = req.body || {}
+    const updated = await threadService.saveDraft(req.user.email, req.params.id, { to, cc, subject, body, tone, aiSource, fallbackReason })
+    if (!updated) return res.status(404).json({ success: false, message: 'Email not found' })
     res.json({ success: true, data: updated })
   } catch (error) {
-    if (error.message === 'A non-empty draft is required for client approval'
-      || error.message === 'Only client-response conversations can request client approval') {
-      return res.status(400).json({ success: false, message: error.message })
-    }
     next(error)
   }
 }
 
+/**
+ * Send a reply through the user's connected Gmail account.
+ * Requires explicitApproval === true — replies are never sent automatically.
+ */
 export const sendReply = async (req, res, next) => {
   try {
-    const { to, cc, subject, body, tone, resultingStatus = 'WAITING_FOR', explicitApproval } = req.body
+    const { to, cc, subject, body, explicitApproval } = req.body || {}
     if (explicitApproval !== true) {
-      return res.status(400).json({ success: false, message: 'Explicit human approval is required for simulated sending' })
+      return res.status(400).json({ success: false, message: 'Explicit human approval is required before sending' })
     }
     if (typeof body !== 'string' || !body.trim() || body.length > 20000) {
       return res.status(400).json({ success: false, message: 'Reply body must contain 1 to 20000 characters' })
     }
-    if (!['WAITING_FOR', 'HANDLED'].includes(resultingStatus)) {
-      return res.status(400).json({ success: false, message: 'resultingStatus must be WAITING_FOR or HANDLED' })
+    if (typeof to !== 'string' || !to.trim()) {
+      return res.status(400).json({ success: false, message: 'A recipient is required' })
     }
 
-    const updated = await threadService.sendReply(
-      req.params.id,
-      { to, cc, subject, body, tone },
-      resultingStatus,
-      req.user.name
-    )
-
-    if (!updated) {
-      return res.status(404).json({ success: false, message: 'Thread not found' })
+    const account = await getConnectedAccount(String(req.user.id))
+    if (!account) {
+      return res.status(409).json({ success: false, message: 'Connect your Gmail account before sending replies. No email was sent.' })
     }
 
-    const counts = await threadService.getCounts()
-    res.json({ success: true, data: updated, counts })
-  } catch (err) {
-    next(err)
-  }
-}
+    const accessToken = await getFreshAccessToken(account)
+    const ccList = typeof cc === 'string'
+      ? cc.split(',').map((value) => value.trim()).filter(Boolean)
+      : Array.isArray(cc) ? cc : []
 
-export const toggleAction = async (req, res, next) => {
-  try {
-    const updated = await threadService.toggleActionItem(req.params.id, req.params.actionId)
-    if (!updated) {
-      return res.status(404).json({ success: false, message: 'Thread or action item not found' })
-    }
-    res.json({ success: true, data: updated })
-  } catch (err) {
-    next(err)
-  }
-}
+    const sent = await sendGmailMessage(accessToken, { to: to.trim(), cc: ccList, subject, body })
 
-export const bulkUpdate = async (req, res, next) => {
-  try {
-    const { threadIds, action, value } = req.body
-    if (!Array.isArray(threadIds) || threadIds.length === 0
-      || threadIds.some((id) => typeof id !== 'string' || !id.trim())) {
-      return res.status(400).json({ success: false, message: 'threadIds must be a non-empty array of non-empty strings' })
-    }
-    if (!['markRead', 'markUnread', 'markImportant', 'archive', 'restore', 'reclassify'].includes(action)) {
-      return res.status(400).json({ success: false, message: 'Unsupported bulk action' })
-    }
-    if (action === 'reclassify' && !threadService.VALID_CLASSIFICATIONS.includes(value)) {
-      return res.status(400).json({ success: false, message: 'A valid classification is required for bulk reclassification' })
-    }
+    const updated = await threadService.markThreadSent(req.user.email, req.params.id, {
+      to: to.trim(),
+      cc: ccList,
+      body,
+      recipients: [to.trim(), ...ccList],
+    }, req.user.name)
 
-    const updated = await threadService.bulkUpdate(threadIds, action, value, req.user.name)
-    const counts = await threadService.getCounts()
-    res.json({ success: true, data: updated, counts })
-  } catch (err) {
-    next(err)
-  }
-}
-
-export const injectEmail = async (req, res, next) => {
-  try {
-    const newThread = await threadService.injectSimulatedEmail(req.body)
-    const counts = await threadService.getCounts()
-    res.status(201).json({ success: true, data: newThread, counts })
-  } catch (err) {
-    next(err)
+    res.json({
+      success: true,
+      data: { gmailMessageId: sent.id, thread: updated },
+      message: 'Reply sent via Gmail.',
+    })
+  } catch (error) {
+    if (error.status) return res.status(error.status).json({ success: false, message: error.message })
+    next(error)
   }
 }
